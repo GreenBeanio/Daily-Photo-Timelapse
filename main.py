@@ -6,6 +6,7 @@ import time
 import datetime
 import json
 import cv2
+import shutil
 
 # User Settings
 add_day_count = True
@@ -16,6 +17,8 @@ length_per_image = 2
 rotate_image = 0
 use_cheat_day = True
 specific_first_date = datetime.date(2024, 1, 1)
+delete_temp = True
+delete_source = False
 
 # Get the path for the photos
 root = pathlib.Path().resolve()
@@ -208,7 +211,6 @@ for n, x in enumerate(images):
             day_string = f"Day: {n+1}"
             day_string_length = len(day_string) - 5
             polygon_width = 525 + (day_string_length * 115)
-            print("peewee")
             if add_text_boxes:
                 draw.polygon(
                     [
@@ -269,3 +271,9 @@ for n, x in enumerate(images):
 # Don't think I have any windows, but might as well make sure
 cv2.destroyAllWindows()
 output_video.release()
+
+# Delete files
+if delete_temp:
+    shutil.rmtree(temp_directory)
+if delete_source:
+    shutil.rmtree(photo_directory)
