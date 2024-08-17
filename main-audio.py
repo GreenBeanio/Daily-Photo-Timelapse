@@ -413,7 +413,6 @@ def addAudio(output_directory, audio_timelapse_directory) -> None:
                 output_directory, "timelapse_audio_fade_scaled_compressed.mp4"
             )
             compress_terms = f'ffmpeg -i "{video_output_scaled}" -crf {compression_factor} "{video_output_compressed}"'
-            print(compress_terms)
             compress_timelapse = subprocess.Popen(
                 compress_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
