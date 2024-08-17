@@ -1,3 +1,8 @@
+# Ignore folder of picture
+photos/
+output/
+corrections.json
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
