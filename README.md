@@ -4,10 +4,17 @@
 
 # How To Use It?
 
-- Run the program in the same folder/directory as the script.
-- Choose if you're making a cipher or deciphering.
-- Type in the key you're using.
-- Enjoy your coded message.
+- You need two folders alongside the script
+  - photos
+  - audio
+- Put the photos (jpg or png) in the photos folder
+- If using the ffmpeg script and using audio put your audio (wav or mp3) in the audio folder
+
+- To add audio, resize, and/or compress the timelapse you will need FFmpeg installed on your system.
+  - To use the ffmpeg features run the "main-audio.py" script.
+  - If you're not using the ffmpeg features, just the timelapse, use the "main.py" script.
+
+- Setting to modify the scripts actions are at the top of each file. The variables should be self-explanatory.
 
 ### Windows
 
@@ -15,6 +22,7 @@
   - cd /your/folder
   - python3 -m venv env
   - call env/Scripts/activate.bat
+  - pip install -r requirements.txt
   - python3 main.py
 - Running After
   - cd /your/folder
@@ -26,6 +34,7 @@
   - cd /your/folder
   - python3 -m venv env
   - source env/bin/activate
+  - pip install -r requirements.txt
   - python3 main.py
 - Running After
   - cd /your/folder

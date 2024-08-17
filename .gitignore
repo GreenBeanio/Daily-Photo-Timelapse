@@ -2,6 +2,8 @@
 photos/
 timelapse/
 temp/
+audio/
+timelapse_audio/
 corrections.json
 
 # Byte-compiled / optimized / DLL files

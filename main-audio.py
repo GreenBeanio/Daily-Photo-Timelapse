@@ -7,6 +7,7 @@ import datetime
 import json
 import cv2
 import shutil
+import subprocess
 
 # endregion
 
@@ -34,6 +35,28 @@ rotate_image = 0
 # Do you want the files deleted after
 delete_temp = False
 delete_source = False
+
+# Do you want to add audio to the clip with ffmpeg
+add_audio = True
+
+# Fade durations for video and audio (set to 0 for no fading)
+video_fade_in = 5
+video_fade_out = 5
+audio_fade_in = 5
+audio_fade_out = 5
+
+# Do you want to scale video (only works if added audio)
+recscale = True
+
+# Size factor to rescale
+scale_factor = 0.5
+
+# Do you want to compress the video (only works if rescaled too)
+compress = True
+
+# Compression factor (Between 18 and 24. The higher the more compressed)
+compression_factor = 24
+
 
 # endregion User Settings
 
@@ -296,12 +319,118 @@ def createVideo(images, output_directory, temp_directory, scale_size) -> None:
     output_video.release()
 
 
+# Use FFmeg to combine audio tracks
+def combineAudio(audio_timelapse_directory, audio_directory) -> None:
+    # store files
+    paths = ""
+    # Get all the files in the audio directory
+    for audio in audio_directory.iterdir():
+        # Check if it's a file
+        if not audio.is_file():
+            continue
+        # Check if it's the correct type of image
+        if not audio.suffix in (".wav", ".mp3"):
+            continue
+        # Adding the path to the string
+        paths += f"file '{audio}'\n"
+    # Writing this to file
+    audio_txt = pathlib.Path.joinpath(audio_timelapse_directory, "audio.txt")
+    with open(audio_txt, "w+") as file:
+        file.write(paths)
+    # output file
+    audio_out = pathlib.Path.joinpath(audio_timelapse_directory, "audio.wav")
+    # Terms for the audio files
+    audio_terms = f'ffmpeg -f concat -safe 0 -i "{audio_txt}" "{audio_out}"'
+    # Command for ffmpeg
+    audio_combine = subprocess.Popen(
+        audio_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    # Run the command and wait for it to finish
+    audio_combine.wait(timeout=60)
+
+
+# Use FFmpeg to add a wav file to the video
+def addAudio(output_directory, audio_timelapse_directory) -> None:
+    # Video to alter
+    video_source = pathlib.Path.joinpath(output_directory, "timelapse.mp4")
+    # Audio to use
+    audio_source = pathlib.Path.joinpath(audio_timelapse_directory, "audio.wav")
+    # New audio timelapse file
+    audio_timelapse = pathlib.Path.joinpath(output_directory, "timelapse_audio.mp4")
+    # Add the audio to the video
+    audio_terms = f'ffmpeg -i "{video_source}" -i "{audio_source}" -map 0:v:0 -map 1:a:0 -shortest "{audio_timelapse}"'
+    add_audio = subprocess.Popen(
+        audio_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    # Run the command and wait for it to finish
+    add_audio.wait(timeout=60)
+
+    # Get the duration
+    terms = f'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{audio_timelapse}"'
+    # Run ffprobe for the duration
+    # ffprobe = subprocess.run(terms, shell=True, capture_output=True, text=True)
+    # duration = ffprobe.stdout
+    ffprobe = subprocess.Popen(
+        terms, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    # Run the command and get the result
+    duration, err = ffprobe.communicate(timeout=30)
+    duration = float(duration)
+
+    # Get the starting time for the end fade
+    video_fade_out_start = duration - video_fade_out
+    audio_fade_out_start = duration - audio_fade_out
+    video_output = pathlib.Path.joinpath(output_directory, "timelapse_audio_fade.mp4")
+    # Add the fades
+    fade_terms = (
+        f'ffmpeg -i "{audio_timelapse}" '
+        f'-vf "fade=t=in:st=0:d={video_fade_in},fade=t=out:st={video_fade_out_start}:d={video_fade_out}" '
+        f'-af "afade=t=in:st=0:d={audio_fade_in},afade=t=out:st={audio_fade_out_start}:d={audio_fade_out}"'
+        f' "{video_output}'
+    )
+    fade_timelapse = subprocess.Popen(
+        fade_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    # Run the command and wait for it to finish
+    fade_timelapse.wait(timeout=60)
+
+    # Scale the video
+    if recscale:
+        # Output for scaled
+        video_output_scaled = pathlib.Path.joinpath(
+            output_directory, "timelapse_audio_fade_scaled.mp4"
+        )
+        scale_terms = f'ffmpeg -i "{video_output}" -vf "scale=iw*{scale_factor}:ih*{scale_factor}" "{video_output_scaled}"'
+        scale_timelapse = subprocess.Popen(
+            scale_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
+        # Run the command and wait for it to finish
+        scale_timelapse.wait(timeout=60)
+        # Compress the video
+        if compress:
+            # Output for scaled
+            video_output_compressed = pathlib.Path.joinpath(
+                output_directory, "timelapse_audio_fade_scaled_compressed.mp4"
+            )
+            compress_terms = f'ffmpeg -i "{video_output_scaled}" -crf {compression_factor} "{video_output_compressed}"'
+            print(compress_terms)
+            compress_timelapse = subprocess.Popen(
+                compress_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            )
+            # Run the command and wait for it to finish
+            compress_timelapse.wait(timeout=60)
+
+
 # Deletes files after
-def deleteAfter(temp_directory, photo_directory):
+def deleteAfter(
+    temp_directory, photo_directory, audio_timelapse_directory, audio_directory
+):
     if delete_temp:
         shutil.rmtree(temp_directory)
+        shutil.rmtree(audio_timelapse_directory)
     if delete_source:
         shutil.rmtree(photo_directory)
+        shutil.rmtree(audio_directory)
 
 
 # Main function for running everything
@@ -310,6 +439,8 @@ def main() -> None:
     root = pathlib.Path().resolve()
     photo_directory = pathlib.Path.joinpath(root, "photos")
     output_directory = pathlib.Path.joinpath(root, "timelapse")
+    audio_directory = pathlib.Path.joinpath(root, "audio")
+    audio_timelapse_directory = pathlib.Path.joinpath(root, "timelapse_audio")
     temp_directory = pathlib.Path.joinpath(root, "temp")
     json_fix = pathlib.Path.joinpath(root, "corrections.json")
 
@@ -318,6 +449,8 @@ def main() -> None:
         pathlib.Path.mkdir(output_directory)
     if not pathlib.Path.exists(temp_directory):
         pathlib.Path.mkdir(temp_directory)
+    if not pathlib.Path.exists(audio_timelapse_directory):
+        pathlib.Path.mkdir(audio_timelapse_directory)
 
     # Get the date corrections if there are any
     date_corrections = getDateCorrections(json_fix)
@@ -343,8 +476,16 @@ def main() -> None:
     # Create the timelapse video
     createVideo(images, output_directory, temp_directory, scale_size)
 
+    # Combine audio files
+    combineAudio(audio_timelapse_directory, audio_directory)
+
+    # Add audio to the timelapse
+    addAudio(output_directory, audio_timelapse_directory)
+
     # Delete files after if enabled
-    deleteAfter(temp_directory, photo_directory)
+    deleteAfter(
+        temp_directory, photo_directory, audio_timelapse_directory, audio_directory
+    )
 
 
 # Run the main loop
