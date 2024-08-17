@@ -1,6 +1,7 @@
 # Ignore folder of picture
 photos/
 output/
+temp/
 corrections.json
 
 # Byte-compiled / optimized / DLL files

@@ -1,19 +1,34 @@
 # Imports
 import os
-import sys
 import pathlib
-from PIL import Image, ExifTags
+from PIL import Image, ExifTags, ImageOps, ImageDraw, ImageFont
 import time
 import datetime
-import typing
 import json
+import cv2
+
+# User Settings
+add_day_count = True
+add_date = True
+add_text_boxes = True
+fps = 30
+length_per_image = 2
+rotate_image = 0
+use_cheat_day = True
+specific_first_date = datetime.date(2024, 1, 1)
 
 # Get the path for the photos
 root = pathlib.Path().resolve()
 photo_directory = pathlib.Path.joinpath(root, "photos")
 output_directory = pathlib.Path.joinpath(root, "timelapse")
+temp_directory = pathlib.Path.joinpath(root, "temp")
 json_fix = pathlib.Path.joinpath(root, "corrections.json")
-print(json_fix)
+
+# Create future directories
+if not pathlib.Path.exists(output_directory):
+    pathlib.Path.mkdir(output_directory)
+if not pathlib.Path.exists(temp_directory):
+    pathlib.Path.mkdir(temp_directory)
 
 
 # Creating a class to store image information
@@ -34,6 +49,16 @@ class ImageFiles:
     # Special method for lt so we can sort by date time
     def __lt__(self, other):
         return self.creation < other.creation
+
+
+date_corrections = {}
+# Loading json for photos that need fixed
+if pathlib.Path.exists(json_fix):
+    with open(json_fix, "r") as file:
+        temp_load = json.load(file)
+    # Change the sting to datetimes
+    for x, y in temp_load.items():
+        date_corrections[x] = datetime.datetime.strptime(y, "%Y-%m-%d %H:%M:%S")
 
 
 # Create a list of files
@@ -91,6 +116,17 @@ for image_x in photo_directory.iterdir():
     # Add the image to the list
     images.append(wanted_data)
 
+
+# Getting a list of the file paths that need updated
+need_updated_paths = []
+for x in date_corrections:
+    need_updated_paths.append(pathlib.Path.joinpath(root, "photos", x))
+
+# Checking images that need to have their dates fixed
+for n, x in enumerate(images):
+    if x.path in need_updated_paths:
+        images[n].creation = date_corrections[images[n].path.name]
+
 # Here's a step to fix any issues in the dates. In my example pictures for some reason
 # a handful of pictures lost their modified time. So this step will be used to fix the
 # date time of those pictures.
@@ -114,7 +150,6 @@ for x in images:
     if x.creation in output_sorted_count:
         pictures_to_update.append(x.path.name)
 # Get the user to update the datetimes of these (preferably they'd have their phone or wherever they took them to get the correct datetime)
-update_dates = {}
 for x in pictures_to_update:
     while True:
         user_answer = input(
@@ -122,13 +157,115 @@ for x in pictures_to_update:
         )
         try:
             new_time = datetime.datetime.strptime(user_answer, "%Y/%m/%d %H:%M:%S")
-            update_dates[x] = new_time
+            date_corrections[x] = new_time
             break
         except:
             print("That time was invalid.")
 # Save these updates for later!
-with open(json_fix, "a+") as file:
-    json.dumps(update_dates, indent=4, sort_keys=True, default=str)
+with open(json_fix, "w+") as file:
+    json_obj = json.dumps(date_corrections, indent=4, sort_keys=False, default=str)
+    file.write(json_obj)
 
 # Sorting the images by their date (defined in the class __lt__ method)
 images.sort()
+
+size_count = {}
+# Get the most common image size
+for x in images:
+    str_match = str(x.width) + " " + str(x.height)
+    if size_count.get(str_match) is None:
+        size_count[str_match] = {"Width": x.width, "Height": x.height, "Count": 1}
+    else:
+        size_count[str_match]["Count"] += 1
+common_size = ""
+temp_size = 0
+for x, y in size_count.items():
+    if y["Count"] > temp_size:
+        common_size = x
+        temp_size = y["Count"]
+scale_size = (size_count[common_size]["Width"], size_count[common_size]["Height"])
+font = ImageFont.load_default(size=200)
+# Get the first date
+if specific_first_date is None:
+    first_date = images[0].creation.date()
+else:
+    first_date = specific_first_date
+# Resizing the images
+for n, x in enumerate(images):
+    with Image.open(x.path) as im:
+        name = pathlib.Path.joinpath(temp_directory, x.path.name)
+        # Sets the image to follow the transposing in the exif tag
+        im = ImageOps.exif_transpose(im)
+        # Rotate if we are rotating
+        if rotate_image != 0:
+            im = im.rotate(rotate_image)
+        # Resize the image
+        if im.size != scale_size:
+            im = ImageOps.cover(im, scale_size)
+        draw = ImageDraw.Draw(im, "RGBA")
+        # Add day counter
+        if add_day_count:
+            day_string = f"Day: {n+1}"
+            day_string_length = len(day_string) - 5
+            polygon_width = 525 + (day_string_length * 115)
+            print("peewee")
+            if add_text_boxes:
+                draw.polygon(
+                    [
+                        (35, 25),
+                        (35, 245),
+                        (polygon_width, 245),
+                        (polygon_width, 25),
+                    ],
+                    fill=(255, 255, 255, 75),
+                )
+            draw.text(
+                (50, -5),
+                day_string,
+                font=font,
+                fill=(0, 0, 0, 100),
+                anchor="la",
+            )
+        if add_date:
+            if add_text_boxes:
+                draw.polygon(
+                    [
+                        (im.size[0] - 35, im.size[1] - 25),
+                        (im.size[0] - 35, im.size[1] - 245),
+                        (im.size[0] - 1100, im.size[1] - 245),
+                        (im.size[0] - 1100, im.size[1] - 25),
+                    ],
+                    fill=(255, 255, 255, 75),
+                )
+            date_to_use = str(x.creation.date())
+            if use_cheat_day:
+                date_to_use = first_date + datetime.timedelta(days=n)
+            draw.text(
+                (im.size[0] - 50, im.size[1] - 72),
+                f"{date_to_use}",
+                font=font,
+                fill=(0, 0, 0, 100),
+                anchor="rs",
+            )
+        # Save the image
+        im.save(name)
+
+output_video = cv2.VideoWriter(
+    pathlib.Path.joinpath(output_directory, "timelapse.mp4"),
+    fourcc=cv2.VideoWriter_fourcc(*"mp4v"),
+    fps=fps,
+    frameSize=scale_size,
+)
+
+# Creating a video using opencv
+for n, x in enumerate(images):
+    # Get name of the image for a frame
+    name = pathlib.Path.joinpath(temp_directory, x.path.name)
+    # Read the image with openCV
+    img = cv2.imread(name)
+    # For however many frames we want per image add it to the video
+    for i in range(length_per_image):
+        output_video.write(img)
+# Don't think I have any windows, but might as well make sure
+cv2.destroyAllWindows()
+output_video.release()
