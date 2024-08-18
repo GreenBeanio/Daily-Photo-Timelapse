@@ -15,7 +15,7 @@ import subprocess
 
 # Set values for the timelapse
 fps = 30
-length_per_image = 2
+length_per_image = 2  # in frames
 
 # Enable what you want overlaying the videos
 add_day_count = True
@@ -32,12 +32,22 @@ specific_first_date = datetime.date(2024, 1, 1)
 # If files need rotated
 rotate_image = 0
 
-# Do you want the files deleted after
-delete_temp = False
-delete_source = False
+# Use ffmpeg instead of openCV (If for some reason you want to use ffmpeg instead of openCV)
+ffmpeg_not_cv2 = False
 
 # Do you want to add audio to the clip with ffmpeg
 add_audio = True
+
+# Do you want to scale video (only works if added audio)
+recscale = True
+
+# Do you want to compress the video (only works if rescaled too)
+compress = True
+
+# Do you want the files deleted after
+delete_temp = True
+delete_source = False
+delete_corrections_file = False  # I wouldn't delete this one just in case you want to generate a longer timelapse in the future with the same photos.
 
 # Fade durations for video and audio (set to 0 for no fading)
 video_fade_in = 5
@@ -45,18 +55,11 @@ video_fade_out = 5
 audio_fade_in = 5
 audio_fade_out = 5
 
-# Do you want to scale video (only works if added audio)
-recscale = True
-
 # Size factor to rescale
 scale_factor = 0.5
 
-# Do you want to compress the video (only works if rescaled too)
-compress = True
-
 # Compression factor (Between 18 and 24. The higher the more compressed)
 compression_factor = 24
-
 
 # endregion User Settings
 
@@ -297,7 +300,7 @@ def createImages(images, temp_directory, scale_size) -> None:
             im.save(name)
 
 
-# Creates the timelapse video
+# Creates the timelapse video using OpenCV
 def createVideo(images, output_directory, temp_directory, scale_size) -> None:
     output_video = cv2.VideoWriter(
         pathlib.Path.joinpath(output_directory, "timelapse.mp4"),
@@ -317,6 +320,37 @@ def createVideo(images, output_directory, temp_directory, scale_size) -> None:
     # Don't think I have any windows, but might as well make sure
     cv2.destroyAllWindows()
     output_video.release()
+
+
+# Creates the timelapse video using FFmpeg
+def createVideoFF(images, output_directory, temp_directory, scale_size) -> None:
+    # Get the duration in ms (This didn't seem to work)
+    # image_duration = 1000 / fps * length_per_image
+    # Creating a list of the images
+    image_string = ""
+    for x in images:
+        # Get name of the image for a frame
+        name = pathlib.Path.joinpath(temp_directory, x.path.name)
+        # image_string += f"file '{name}'\nduration {image_duration}\n"
+        # Using duration didn't work so I'm going to do this my own way (just repeat the file for our desired output)
+        for i in range(length_per_image):
+            image_string += f"file '{name}'\n"
+    # Writing this to file
+    image_txt = pathlib.Path.joinpath(output_directory, "images.txt")
+    with open(image_txt, "w+") as file:
+        file.write(image_string)
+    # Output file for the timelapse
+    video_out = pathlib.Path.joinpath(output_directory, "timelapse.mp4")
+    # Terms for the audio files
+    video_terms = f'ffmpeg -f concat -safe 0 -i "{image_txt}" -vf settb=AVTB,setpts=N/{fps}/TB -r {fps} "{video_out}"'
+    # Command for ffmpeg
+    video_combine = subprocess.Popen(
+        video_terms, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
+    # Run the command and wait for it to finish
+    video_combine.wait(timeout=60)
+    # Remove the images file
+    os.remove(image_txt)
 
 
 # Use FFmeg to combine audio tracks
@@ -347,6 +381,8 @@ def combineAudio(audio_timelapse_directory, audio_directory) -> None:
     )
     # Run the command and wait for it to finish
     audio_combine.wait(timeout=60)
+    # Remove the audio file
+    os.remove(audio_txt)
 
 
 # Use FFmpeg to add a wav file to the video
@@ -422,7 +458,11 @@ def addAudio(output_directory, audio_timelapse_directory) -> None:
 
 # Deletes files after
 def deleteAfter(
-    temp_directory, photo_directory, audio_timelapse_directory, audio_directory
+    temp_directory,
+    photo_directory,
+    audio_timelapse_directory,
+    audio_directory,
+    json_fix,
 ):
     if delete_temp:
         shutil.rmtree(temp_directory)
@@ -430,6 +470,8 @@ def deleteAfter(
     if delete_source:
         shutil.rmtree(photo_directory)
         shutil.rmtree(audio_directory)
+    if delete_corrections_file:
+        os.remove(json_fix)
 
 
 # Main function for running everything
@@ -473,17 +515,24 @@ def main() -> None:
     createImages(images, temp_directory, scale_size)
 
     # Create the timelapse video
-    createVideo(images, output_directory, temp_directory, scale_size)
+    if not ffmpeg_not_cv2:
+        createVideo(images, output_directory, temp_directory, scale_size)
+    else:
+        createVideoFF(images, output_directory, temp_directory, scale_size)
 
     # Combine audio files
-    combineAudio(audio_timelapse_directory, audio_directory)
-
-    # Add audio to the timelapse
-    addAudio(output_directory, audio_timelapse_directory)
+    if add_audio:
+        combineAudio(audio_timelapse_directory, audio_directory)
+        # Add audio to the timelapse
+        addAudio(output_directory, audio_timelapse_directory)
 
     # Delete files after if enabled
     deleteAfter(
-        temp_directory, photo_directory, audio_timelapse_directory, audio_directory
+        temp_directory,
+        photo_directory,
+        audio_timelapse_directory,
+        audio_directory,
+        json_fix,
     )
 
 

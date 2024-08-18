@@ -7,8 +7,11 @@
 - You need two folders alongside the script
   - photos
   - audio
+    - Only if using the ffmpeg script
+
 - Put the photos (jpg or png) in the photos folder
 - If using the ffmpeg script and using audio put your audio (wav or mp3) in the audio folder
+  - Note that if using the ffmpeg script the video will be the length of the shortest of the combined audio files and the video generated from the images. Be sure to make sure the audio files will be longer than the generated video.
 
 - To add audio, resize, and/or compress the timelapse you will need FFmpeg installed on your system.
   - To use the ffmpeg features run the "main-audio.py" script.
